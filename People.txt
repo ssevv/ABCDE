@@ -1,5 +1,12 @@
 TAHA{}
 ARIF{}
+<<<<<<< HEAD
 YAGIZ{ZaaaaZaaa}
 SIBEL{Hey there I am using Git}
 SEMANUR{:D ---_---, asdfghjk}
+=======
+YAGIZ{}
+SIBEL{Hey there I am using Git
+	Github}
+SEMANUR{}
+>>>>>>> Sibel
