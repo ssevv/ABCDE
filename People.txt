@@ -1,7 +1,11 @@
 TAHA{}
 ARIF{}
 <<<<<<< HEAD
+<<<<<<< HEAD
 YAGIZ{ZaaaaZaaa}
+=======
+YAGIZ{ZaaaaZaaagfgfjhgj}
+>>>>>>> Ayri
 SIBEL{Hey there I am using Git}
 SEMANUR{:D ---_---, asdfghjk}
 =======
