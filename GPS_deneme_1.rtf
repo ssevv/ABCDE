@@ -1,0 +1,210 @@
+{\rtf1\ansi\ansicpg1254\deff0\nouicompat\deflang1055{\fonttbl{\f0\fnil\fcharset0 Calibri;}{\f1\fnil\fcharset162 Calibri;}}
+{\*\generator Riched20 6.2.9200}\viewkind4\uc1 
+\pard\sa200\sl276\slmult1\f0\fs22\lang1033 function MPS1_granger_significance(\f1\lang1055 )\f0\lang1033\par
+% Calculate granger for a condition\par
+%\par
+% Author: Ricky Sachdeva, Conrad Nied, Reid Vancelette\par
+% Input: the GPS variables structure\par
+% Output: nothing (written to files)\par
+%\par
+% Date Created: 2011.04.30\par
+% Last Modified: 2012.12.05\par
+% 2012.11.19: Code looked over for MVS1\par
+%\par
+% Modeled after Sato et al., 2009\par
+\par
+% function [signif_conn, alpha_values, total_control_granger, bstrap_time] = GPS_9_Significance_Testing(sspace,residuals,data,model_order,granger_results)\par
+\par
+%% Parameters\par
+\par
+tbegin = tic;\par
+GPS_vars.study = 'MPS1';\par
+GPS_vars.condition = 'soVerbMI';\par
+GPS_vars.subject = 'average';\par
+GPS_vars.savedir = '/autofs/cluster/dgow/GPS1.6/data';\par
+GPS_vars.function = 'granger_significance';\par
+study = data_load(GPS_vars, GPS_vars.study);\par
+\par
+subsubsets = \{'300TO500', '500TO800'\};\par
+conditions = \{'soVerbMI', 'soVerbMR', 'soEndI', 'soEndR', 'ssVerbMI', 'ssVerbMR', 'ssEndI', 'ssEndR' \};\par
+\par
+for i_conditions = 1:(length(conditions))\par
+    GPS_vars.condition = conditions\{i_conditions\};\par
+    \par
+    for i_subsubset = 1:(length(subsubsets))\par
+        subsubset = subsubsets\{i_subsubset\};\par
+        \par
+        varargin\{1\} = ['_subjave_' subsubset];\par
+        \par
+        % Study\par
+        \par
+        condition = data_load(GPS_vars, GPS_vars.condition);\par
+        \par
+        % Simple Granger Results\par
+        \par
+        if(length(varargin) == 1)\par
+            special_affix = varargin\{1\};\par
+            inputfilename = sprintf('%s/results/%s%s.mat',...\par
+                study.granger.dir, condition.name, special_affix);\par
+            outputfilename = sprintf('%s/results/%s%s_significance_%s.mat',...\par
+                study.granger.dir, condition.name, special_affix, datestr(now, 'yyyymmdd'));\par
+        elseif(length(varargin) == 2)\par
+            inputfilename = varargin\{1\};\par
+            outputfilename = varargin\{2\};\par
+        else\par
+            inputfilename = sprintf('%s/results/%s.mat',...\par
+                study.granger.dir, condition.name);\par
+            outputfilename = sprintf('%s/results/%s_significance_%d.mat',...\par
+                study.granger.dir, condition.name, datestr(now, 'yyyymmdd'));\par
+        end\par
+        \par
+        grangerfile = load(inputfilename);\par
+        \par
+        sspace = grangerfile.sspace;\par
+        residuals = grangerfile.residual;\par
+        data = grangerfile.data;\par
+        granger_results = grangerfile.granger_results;\par
+        % model_order = grangerfile.model_order;\par
+        \par
+        clear grangerfile;\par
+        \par
+        % Specific Parameters\par
+        [N_trials N_ROIs N_time] = size(data);\par
+        W_gain = 0.5;%study.granger.W_gain; %0.03;\par
+        model_order = 5;%study.granger.model_order; %7;\par
+        N_comp = 2000;\par
+        \par
+        filename_rois = sprintf('%s/rois/%s/%s/*.label', study.granger.dir, condition.name, subsubset);\par
+        all_rois = dir(filename_rois);\par
+        all_rois = \{all_rois.name\};\par
+        \par
+        % Define ROIs of interest for significance testing\par
+        src_selection = \{'L-STG', 'L-MTG', 'Fusi', 'ParaHip', 'L-ParsTri', 'L-ParsOper', 'L-ParsOrb'\};\par
+        snk_selection = src_selection;\par
+        \par
+        src_ROIs = zeros(N_ROIs, 1);\par
+        for i_ROI = 1:N_ROIs\par
+            for isrc_selection = 1:length(src_selection)\par
+                if(~isempty(strfind(all_rois\{i_ROI\}, src_selection\{isrc_selection\})))\par
+                    src_ROIs(i_ROI)=1;\par
+                end\par
+            end\par
+        end\par
+        src_ROIs = find(src_ROIs);\par
+        snk_ROIs = src_ROIs\par
+        N_src = length(src_ROIs);\par
+        N_snk = length(snk_ROIs);\par
+        \par
+        % Preallocated Varibles\par
+        total_control_granger = zeros(N_snk, N_src, N_time, N_comp, 'single');\par
+        % alpha_values = zeros(N_ROIs, N_ROIs, N_time);\par
+        % signif_conn = zeros(N_ROIs, N_ROIs, N_time);\par
+        % bstrap_time = zeros(N_trials, N_ROIs, N_time);\par
+        \par
+        matlabpool 8\par
+        \par
+        parfor i_comp = 1:N_comp\par
+            tcomp = tic;\par
+            \par
+            \par
+            % Step 5: For each subject, resample the residuals (random sampling\par
+            % with replacement)\par
+            residuals_resample = zeros(N_trials, N_ROIs, N_time);\par
+            \par
+            % Reorder within each trial??? look into this\par
+            %     for i_trial = 1:N_trials\par
+            %         N_reorder = N_ROIs * N_time;\par
+            %         reorder = randperm(N_reorder);\par
+            %         reorder = residuals(N_reorder * (i_trial - 1) + reorder);\par
+            %         reorder = reshape(reorder, N_ROIs, N_time);\par
+            %\par
+            %         residuals_resample(i_trial,:,:) = reorder;\par
+            %     end\par
+            % Reorder within each trial??? look into this\par
+            %     a = tic;\par
+            for i_trial = 1:N_trials\par
+                for i_ROI = 1:N_ROIs\par
+                    N_reorder = N_time;\par
+                    reorder = randperm(N_reorder);\par
+                    \par
+                    residuals_resample(i_trial, i_ROI, :) = residuals(i_trial, i_ROI, reorder);\par
+                end % For all time\par
+            end % For all trials\par
+            \par
+            %     save('randomdist_significance.mat') % Save the intermediate values\par
+            %     fprintf('resample residuals: %f\\n', toc(a));\par
+            \par
+            % Compare all ROIs...\par
+            for i_src = 1:N_src\par
+                i_ROI = src_ROIs(i_src);\par
+                \par
+                % ... with all other ROIs\par
+                % run time\par
+                for i_snk = 1:N_snk\par
+                    j_ROI = snk_ROIs(i_snk);\par
+                    %             a = tic;\par
+                    bstrap_time = zeros(N_trials, N_ROIs, N_time);\par
+                    \par
+                    % Indices in the source space that record ROI i influece.\par
+                    model_order_end = j_ROI*model_order;\par
+                    start_ind = model_order_end - (model_order-1);\par
+                    \par
+                    % Define the source space excluding ROI i (xi)\par
+                    sspace_xi = sspace;\par
+                    sspace_xi(start_ind:model_order_end,i_ROI,:) = 0;\par
+                    \par
+                    %             fprintf('initialize: %f\\n', toc(a));\par
+                    %             a = tic;\par
+                    \par
+                    % Build a new time series\par
+                    \par
+                    for n = (model_order+1):N_time   %length in terms of time\par
+                        \par
+                        % Build the time window for the current timepoint\par
+                        H = data(:, :, n - (model_order:-1:1));\par
+                        H = reshape(H, N_trials, N_ROIs * model_order);\par
+                        \par
+                        sspace_xi_n = squeeze(sspace_xi(:,:,n));\par
+                        \par
+                        % Generate a new dataset for this relationship\par
+                        bstrap_time(:,:,n) = (H * sspace_xi_n);\par
+                    end\par
+                    \par
+                    bstrap_time = bstrap_time + residuals_resample;\par
+                    \par
+                    bstrap_time(:,:,1:model_order) = data(:,:,1:model_order);\par
+                    \par
+                    % Run granger on this\par
+                    \par
+                    control_granger = granger(bstrap_time, model_order, W_gain, i_ROI, j_ROI); % Specifing Source and Sink nodes\par
+                    total_control_granger(i_snk, i_src, :, i_comp) = single(control_granger(j_ROI, i_ROI, :));\par
+                    \par
+                end\par
+            end % For all ROIs\par
+            \par
+            history_comment = sprintf('Computed Grangers for Iteration %d of %d.',...\par
+                i_comp, N_comp);\par
+            fprintf('%s in %3.0f seconds\\n', history_comment, toc(tcomp));\par
+            history(GPS_vars, toc(tcomp), history_comment);\par
+        end\par
+        \par
+        matlabpool close\par
+        \par
+        alpha_values_focused = quantile(total_control_granger, 0.95, 4);\par
+        signif_conn_focused = granger_results(snk_ROIs, src_ROIs, :) > alpha_values_focused;\par
+        \par
+        alpha_values = zeros(N_ROIs, N_ROIs, N_time);\par
+        signif_conn = zeros(N_ROIs, N_ROIs, N_time);\par
+        \par
+        alpha_values(snk_ROIs, src_ROIs, :) = alpha_values_focused;\par
+        signif_conn(snk_ROIs, src_ROIs, :) = signif_conn_focused;\par
+        \par
+        save(outputfilename, '-v7.3');\par
+    end %end of subsets\par
+end %end of conditions\par
+\par
+history(GPS_vars, toc(tbegin), inputfilename);\par
+\par
+end\par
+}
+ 
